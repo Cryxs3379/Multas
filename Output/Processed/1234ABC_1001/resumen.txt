@@ -1,0 +1,12 @@
+=== RESUMEN DE PROCESAMIENTO ===
+
+Cliente: Juan Pérez García
+DNI: 12345678A
+Fecha de multa: 2026-06-01
+Origen: Malaga
+Referencia interna: MAL-2026-12345678A
+Número de contrato: 1001
+Matrícula: 1234ABC
+Email: juan.perez@email.com
+Idioma: ES
+Resultado: Proceso completado correctamente.

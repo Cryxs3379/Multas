@@ -1,0 +1,12 @@
+=== RESUMEN DE PROCESAMIENTO ===
+
+Cliente: Marie Dupont
+DNI: Y7654321C
+Fecha de multa: 2026-06-03
+Origen: Sevilla
+Referencia interna: SEV-20260603-Y7654321C
+Número de contrato: 1003
+Matrícula: 9012GHI
+Email: marie.dupont@email.com
+Idioma: FR
+Resultado: Proceso completado correctamente.

@@ -1,0 +1,6 @@
+FINE - ORIGIN: DGT
+Customer: John Smith
+ID: X1234567B
+Date: 2026-06-02
+Plate: 5678DEF
+Amount: 200,00 EUR
