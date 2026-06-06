@@ -6,231 +6,232 @@ Basada en un caso real de automatización de multas para una empresa de rent a c
 
 ---
 
+## Guión de 2 minutos (para entrevista)
+
+> Automatizaba multas de rent a car. En producción, Selenium descargaba PDFs desde Pyramid, se parseaban con regex y se consultaba SQL Server. Para la demo eliminé todo eso y empiezo cuando la multa ya está parseada como objeto `Fine`.
+>
+> El orquestador `FineProcessingService` no decide reglas por origen: delega en Strategy Pattern. Cada ciudad/DGT tiene su procesador. Luego busca el contrato vía Repository (hoy fake, mañana SQL), valida fechas, resuelve archivos del servidor simulado y genera la carpeta final.
+>
+> `Program.cs` solo compone dependencias. La demo arranca en `DemoRunner`. Si mañana añado Córdoba, creo un procesador y lo registro en DI: el orquestador no cambia.
+
+---
+
 ## 1. ¿Qué problema resuelve?
 
 Automatiza el procesamiento posterior a la descarga de una multa:
 
-1. Aplica reglas de negocio según el **origen** de la multa (Málaga, Sevilla, Granada o DGT).
+1. Aplica reglas de negocio según el **origen** (Málaga, Sevilla, Granada, DGT).
 2. Busca el **contrato** del cliente por DNI.
 3. Valida que la fecha de la multa esté dentro del periodo del contrato.
-4. Recupera archivos del **servidor simulado** (multa, contrato, documento de ayuda por idioma).
-5. Genera una **carpeta final** con toda la documentación lista para gestión.
-
-En el proyecto real, antes de este flujo había Selenium, lectura de PDFs y consultas a SQL Server. Aquí la demo **empieza cuando la multa ya está parseada**, representada como un objeto `Fine`.
+4. Recupera archivos del **servidor simulado** (multa, contrato, ayuda por idioma).
+5. Genera una **carpeta final** con toda la documentación.
 
 ---
 
-## 2. ¿Por qué es una versión simplificada?
-
-| Sistema real | Demo |
-|---|---|
-| Selenium + web Pyramid | Multas creadas manualmente como objetos |
-| PDFs con regex | Archivos `.txt` simulados |
-| SQL Server | `FakeContractRepository` en memoria |
-| Servidor de archivos corporativo | Carpeta local `FakeServer/` |
-| Datos reales de clientes | Datos ficticios y anonimizados |
-
-La simplificación permite centrarse en **arquitectura, patrones y buenas prácticas** sin infraestructura externa.
-
----
-
-## 3. Partes simuladas
-
-- **Descarga de multas** → archivos en `FakeServer/DownloadedFines/`
-- **Base de datos de contratos** → `FakeContractRepository`
-- **Servidor de archivos** → `FakeServer/Contracts/` y `FakeServer/HelpDocuments/`
-- **Reglas por origen** → procesadores en `Strategies/`
-
----
-
-## 4. Arquitectura del proyecto
+## 2. Arquitectura del proyecto
 
 ```
 FineAutomationInterviewDemo/
- ├── Program.cs                    # Composición raíz (DI + ejecución)
- ├── Models/                       # Entidades de dominio
- ├── Enums/                        # FineOrigin, Language
- ├── Repositories/                 # Repository Pattern (simulado)
- ├── Services/                     # Orquestación y archivos
- ├── Strategies/                   # Strategy Pattern por origen
- ├── Infrastructure/               # Seeder del sistema de archivos fake
- ├── FakeServer/                   # Datos simulados (generados al ejecutar)
- └── Output/Processed/             # Resultado del procesamiento
+ ├── Program.cs                         # Solo composición DI (9 líneas)
+ ├── Demo/
+ │   ├── DemoRunner.cs                  # Ejecuta la demo
+ │   └── SampleFineFactory.cs           # Multas de ejemplo
+ ├── Infrastructure/
+ │   ├── ServiceCollectionExtensions.cs # Registro de dependencias
+ │   ├── IAppPaths / AppPaths           # Rutas centralizadas
+ │   └── FakeFileSystemSeeder.cs        # Datos simulados
+ ├── Models/                            # Entidades y resultados
+ ├── Enums/                             # FineOrigin, Language
+ ├── Repositories/                      # Repository Pattern
+ ├── Services/                          # Orquestación y colaboradores
+ └── Strategies/                        # Strategy Pattern por origen
 ```
 
-### Responsabilidades
+### Mapa de responsabilidades
 
-| Capa | Responsabilidad |
+| Clase / Interfaz | Responsabilidad única |
 |---|---|
-| `Program.cs` | Configurar DI, sembrar datos, ejecutar demo |
-| `Strategies/` | Reglas específicas por origen de multa |
-| `Repositories/` | Acceso a contratos (intercambiable por SQL) |
-| `Services/` | Orquestación, rutas de servidor y carpeta final |
-| `Infrastructure/` | Crear estructura fake si no existe |
+| `Program.cs` | Componer el contenedor DI y arrancar |
+| `DemoRunner` | Sembrar datos y ejecutar casos de ejemplo |
+| `FineProcessingService` | Orquestar el flujo paso a paso |
+| `IFineOriginProcessor` | Reglas y referencia interna por origen |
+| `IFineOriginProcessorFactory` | Resolver el procesador sin switch |
+| `IContractRepository` | Acceso a contratos (abstracción de datos) |
+| `IContractValidator` | Validar fechas multa vs contrato |
+| `IServerFileService` | Rutas y existencia de archivos del servidor |
+| `IOutputFolderService` | Carpeta final, copias y resumen |
+| `IProcessingLogger` | Logging desacoplado (hoy consola) |
+| `IAppPaths` | Rutas base para testabilidad |
 
 ---
 
-## 5. Flujo de ejecución
+## 3. Flujo de ejecución
 
 ```
-Fine (manual)
-    │
-    ▼
-FineProcessingService
-    │
-    ├─► FineOriginProcessorFactory → IFineOriginProcessor (Strategy)
-    │       └─► OriginProcessingResult (referencia interna)
-    │
-    ├─► IContractRepository.GetByDni()
-    │
-    ├─► Validación de fechas del contrato
-    │
-    ├─► IServerFileService (multa, contrato, ayuda)
-    │
-    └─► IOutputFolderService (carpeta + copias + resumen.txt)
-            │
-            ▼
-    ProcessingResult
+Fine
+  │
+  ▼
+FineProcessingService.Process()
+  │
+  ├─► ApplyOriginRules()        → IFineOriginProcessorFactory → Strategy
+  ├─► ResolveContract()         → IContractRepository
+  ├─► ValidateContractDates()   → IContractValidator
+  ├─► ResolveServerFiles()      → IServerFileService
+  └─► BuildOutputPackage()      → IOutputFolderService
+        │
+        ▼
+  ProcessingResult (éxito o fallo controlado)
 ```
 
----
-
-## 6. Buenas prácticas demostradas
-
-- **Clases y modelos** bien definidos (`Fine`, `Contract`, `ProcessingResult`)
-- **Enums** para orígenes e idiomas
-- **LINQ** en el repositorio (`FirstOrDefault`)
-- **Interfaces** para desacoplar implementaciones
-- **Servicios** con responsabilidad única
-- **Inyección de dependencias** con `Microsoft.Extensions.DependencyInjection`
-- **Separación de responsabilidades** (sin lógica de negocio en `Program.cs`)
-- **Principios SOLID** (ver sección de entrevista)
-- **Validaciones de negocio** en procesadores y servicio
-- **Manejo controlado de errores** con `ProcessingResult` / `OriginProcessingResult`
-- **Gestión de archivos** encapsulada en servicios dedicados
-- **Código preparado para evolucionar** a SQL Server, Selenium y PDFs reales
+Los errores de negocio **no lanzan excepciones**: devuelven `ProcessingResult.Fail` con mensaje claro.
 
 ---
 
-## 7. Patrones utilizados
+## 4. Decisiones de diseño conscientes
+
+### ¿Por qué `Program.cs` es tan pequeño?
+
+Porque su único trabajo es **composición raíz** (Composition Root). Toda la lógica de demo vive en `DemoRunner` y los datos de ejemplo en `SampleFineFactory`. En una entrevista puedes decir: *"Program no tiene lógica de negocio; solo cablea dependencias."*
+
+### ¿Por qué `FineProcessingService` no hace todo?
+
+Antes mezclaba logging, validación de fechas, comprobación de archivos y copias. Ahora **solo orquesta** y delega:
+
+- Reglas de origen → Strategy
+- Contratos → Repository
+- Fechas → `IContractValidator`
+- Archivos → `IServerFileService`
+- Salida → `IOutputFolderService`
+- Logs → `IProcessingLogger`
+
+Eso demuestra **Single Responsibility** sin caer en sobre-arquitectura.
+
+### ¿Por qué result objects en lugar de excepciones?
+
+`OriginProcessingResult`, `ValidationResult`, `FileResolutionResult` y `ProcessingResult` representan **fallos esperados de negocio** (DNI sin contrato, fecha fuera de rango). Las excepciones quedan para errores técnicos reales. Es un criterio defendible en entrevista.
+
+### ¿Por qué `IAppPaths`?
+
+Evita llamar a `Directory.GetCurrentDirectory()` en cinco sitios distintos. En tests puedes inyectar una ruta temporal sin tocar el disco del proyecto.
+
+### ¿Qué NO hice (a propósito)?
+
+- No añadí capas Clean Architecture completas (Application/Domain/Infrastructure separados en proyectos).
+- No usé MediatR, AutoMapper ni librerías extra.
+- No creé proyecto de tests (documentado cómo hacerlo).
+
+La demo es **pequeña pero profesional**: suficiente para explicar patrones sin perder 10 minutos de la entrevista en estructura.
+
+---
+
+## 5. Patrones utilizados
 
 ### Strategy Pattern
-Cada origen (`Malaga`, `Sevilla`, `Granada`, `DGT`) tiene su propio procesador que implementa `IFineOriginProcessor`. El orquestador no usa `switch` enormes: delega en `FineOriginProcessorFactory`.
+`IFineOriginProcessor` + 4 implementaciones. `FineOriginProcessorFactory` resuelve el procesador con un diccionario. **Sin switch en el orquestador.**
 
 ### Repository Pattern
-`IContractRepository` abstrae el acceso a contratos. Hoy es `FakeContractRepository`; mañana puede ser `SqlContractRepository` sin tocar el servicio principal.
+`IContractRepository` abstrae el acceso a datos. `FakeContractRepository` simula:
+
+```sql
+SELECT * FROM Contracts WHERE Dni = @dni
+```
+
+Sustituir por SQL Server = nueva clase + cambiar una línea en DI.
 
 ### Dependency Injection
-Todas las dependencias se registran en `Program.cs` y se inyectan por constructor. Facilita testing y sustitución de implementaciones.
+Registro centralizado en `ServiceCollectionExtensions.AddFineAutomationServices()`.
 
 ### Separación de responsabilidades
-- `FineProcessingService` → orquesta el flujo
-- `IFineOriginProcessor` → reglas por origen
-- `IServerFileService` → rutas y existencia de archivos
-- `IOutputFolderService` → carpeta final y resumen
+Cada interfaz tiene un motivo claro de cambio (archivos, contratos, logging, validación, salida).
 
 ---
 
-## 8. Cómo ejecutar
+## 6. Cómo ejecutar
 
 ```bash
 cd FineAutomationInterviewDemo
 dotnet run
 ```
 
-La primera ejecución crea automáticamente los archivos en `FakeServer/` mediante `FakeFileSystemSeeder`.
-
-Se procesan 4 multas de ejemplo:
-- 3 casos exitosos (Juan, John, Marie)
-- 1 caso de error (cliente sin contrato)
-
-Las carpetas resultantes aparecen en `Output/Processed/`.
+Resultado esperado:
+- 3 multas procesadas correctamente → `Output/Processed/`
+- 1 multa fallida → cliente sin contrato
 
 ---
 
-## 9. Cómo evolucionaría a una versión real
+## 7. Cómo evolucionaría a producción
 
-| Componente demo | Evolución real |
+| Demo | Producción |
 |---|---|
-| Objetos `Fine` manuales | Selenium en Pyramid + descarga de PDFs |
-| Archivos `.txt` | Parser de PDF con regex o librería especializada |
-| `FakeContractRepository` | `SqlContractRepository` con ADO.NET / Dapper / EF Core |
-| `FakeServer/` local | UNC path o API de almacenamiento corporativo |
-| `Console.WriteLine` | `ILogger<T>` con Serilog / Application Insights |
-| Sin notificaciones | Servicio de email al cliente según idioma |
+| `SampleFineFactory` | Selenium + parser PDF |
+| `FakeContractRepository` | `SqlContractRepository` |
+| `FakeServer/` | UNC path o blob storage |
+| `ConsoleProcessingLogger` | `ILogger<T>` + Serilog |
+| Sin emails | Servicio de notificación por idioma |
 
-La estructura actual **no habría que reescribirla**: solo sustituir implementaciones concretas manteniendo las interfaces.
-
----
-
-## 10. Cómo explicarlo en una entrevista técnica
-
-1. **Contexto**: "Automatizaba multas de rent a car. El flujo real empezaba en Pyramid con Selenium."
-2. **Simplificación**: "Para la demo eliminé dependencias externas y empiezo cuando la multa ya está parseada."
-3. **Strategy**: "Cada ciudad/DGT tiene reglas distintas. Uso Strategy para no acoplar el orquestador."
-4. **Repository**: "El contrato viene de una abstracción. Hoy es fake, en producción sería SQL Server."
-5. **Flujo**: "Valido origen → busco contrato → valido fechas → recupero archivos → genero carpeta final."
-6. **SOLID**: "Open/Closed al añadir orígenes, Dependency Inversion con interfaces, Single Responsibility por clase."
-7. **Evolución**: "Cambiaría implementaciones, no la arquitectura."
+**La arquitectura no se reescribe**: se sustituyen implementaciones.
 
 ---
 
 ## Cómo defender esta demo en entrevista
 
-> En el proyecto real, la descarga de multas se hacía con Selenium desde Pyramid y los datos venían de PDFs reales. Para esta demo he eliminado dependencias externas y datos privados. Creo multas manuales como objetos, indicando el origen de la multa. A partir de ahí, el sistema usa Strategy Pattern para aplicar reglas distintas según Málaga, Sevilla, Granada o DGT. Después consulta un repositorio simulado que representa SQL Server, valida las fechas del contrato, busca archivos en un servidor simulado y genera una carpeta final con la documentación.
+> En el proyecto real, la descarga de multas se hacía con Selenium desde Pyramid y los datos venían de PDFs reales. Para esta demo he eliminado dependencias externas y datos privados. Creo multas manuales como objetos, indicando el origen de la multa. A partir de ahí, el sistema usa Strategy Pattern para aplicar reglas distintas según Málaga, Sevilla, Granada o DGT. Después consulta un repositorio simulado que representa SQL Server, valida las fechas del contrato, busca archivos en un servidor simulado y genera una carpeta final con la documentación. El orquestador no sabe de dónde vienen los datos ni cómo se guardan los archivos: solo coordina interfaces.
 
 ---
 
-## Preguntas típicas de entrevista que puedo responder con este proyecto
+## Preguntas típicas de entrevista
 
 ### ¿Por qué usaste interfaces?
-Para desacoplar la lógica de negocio de las implementaciones concretas. `IFineProcessingService` no sabe si el repositorio es fake o SQL. Eso facilita tests, mantenimiento y sustitución sin romper el orquestador.
+Para depender de abstracciones, no de implementaciones concretas. Facilita tests con mocks y sustituir fake por SQL sin tocar `FineProcessingService`.
 
 ### ¿Por qué usaste Strategy Pattern?
-Porque cada origen de multa tiene reglas diferentes (validaciones y formato de referencia interna). En lugar de un `switch` gigante en el servicio, cada origen tiene su clase. Añadir Granada, Sevilla o un quinto origen no modifica los existentes (Open/Closed).
+Cada origen tiene validaciones y formato de referencia distintos. Un `switch` en el orquestador violaría Open/Closed: cada nuevo origen obligaría a modificarlo.
 
 ### ¿Cómo cambiarías FakeContractRepository por SQL Server?
-Crearía `SqlContractRepository : IContractRepository` con ADO.NET, Dapper o EF Core. En `Program.cs` cambiaría el registro:
 
 ```csharp
+public class SqlContractRepository : IContractRepository
+{
+    public Contract? GetByDni(string dni)
+    {
+        // SELECT ... WHERE Dni = @dni con ADO.NET / Dapper / EF Core
+    }
+}
+
+// En ServiceCollectionExtensions:
 services.AddSingleton<IContractRepository, SqlContractRepository>();
 ```
 
-`FineProcessingService` no cambiaría.
-
-### ¿Cómo añadirías un nuevo origen de multa?
-1. Añadir valor al enum `FineOrigin` (ej. `Cordoba`).
-2. Crear `CordobaFineProcessor : IFineOriginProcessor`.
-3. Registrar en DI: `services.AddSingleton<IFineOriginProcessor, CordobaFineProcessor>()`.
-
-La factory lo detecta automáticamente vía `IEnumerable<IFineOriginProcessor>`.
+### ¿Cómo añadirías un nuevo origen?
+1. Valor en `FineOrigin` (ej. `Cordoba`).
+2. Clase `CordobaFineProcessor : IFineOriginProcessor`.
+3. Registro: `services.AddSingleton<IFineOriginProcessor, CordobaFineProcessor>()`.
 
 ### ¿Cómo testearías este servicio?
-Con **xUnit** o **NUnit** y mocks (Moq / NSubstitute):
+- **Procesadores**: tests unitarios puros (sin mocks).
+- **FineProcessingService**: mock de `IContractRepository`, `IServerFileService` con `IAppPaths` temporal.
+- **ContractValidator**: tests con fechas dentro/fuera de rango.
+- Assert sobre `ProcessingResult.Success` y mensajes.
 
-- Mock de `IContractRepository` para simular contrato encontrado / no encontrado.
-- Procesadores reales o aislados para validar referencias (`MAL-2026-12345678A`).
-- `ServerFileService` con rutas temporales (`Path.GetTempPath()`).
-- Assert sobre `ProcessingResult.Success`, mensajes y rutas generadas.
+### ¿Qué principio SOLID aplicas?
 
-### ¿Qué principio SOLID estás aplicando?
-
-| Principio | Ejemplo en el proyecto |
+| Principio | Dónde |
 |---|---|
-| **S** – Single Responsibility | Cada procesador solo aplica reglas de su origen |
-| **O** – Open/Closed | Nuevos orígenes sin modificar `FineProcessingService` |
-| **L** – Liskov Substitution | Cualquier `IFineOriginProcessor` es intercambiable |
-| **I** – Interface Segregation | Interfaces pequeñas y focalizadas |
-| **D** – Dependency Inversion | El servicio depende de abstracciones, no de fakes |
+| **S** | Cada clase una responsabilidad |
+| **O** | Nuevos orígenes sin modificar orquestador |
+| **L** | Cualquier `IFineOriginProcessor` es intercambiable |
+| **I** | Interfaces pequeñas (`IContractValidator`, `IProcessingLogger`) |
+| **D** | `FineProcessingService` depende de abstracciones |
 
-### ¿Por qué no has usado Selenium ni PDFs reales en la demo?
-Porque el objetivo es demostrar **arquitectura y patrones .NET**, no infraestructura externa. Selenium y PDFs añaden complejidad operativa (drivers, credenciales, datos sensibles) que distrae de lo que quiero explicar: DI, Strategy, Repository y orquestación limpia.
+### ¿Por qué no Selenium ni PDFs reales?
+Porque la demo demuestra **diseño .NET**, no infraestructura. Selenium y PDFs distraen de DI, Strategy y Repository en una entrevista de 45 minutos.
+
+### ¿Por qué `TryGetProcessor` y no excepción?
+Los errores de negocio van por result objects. Un origen sin procesador es un fallo controlado que el orquestador convierte en `ProcessingResult.Fail`, no en un crash.
 
 ---
 
 ## Testing (opcional)
-
-No se incluye proyecto de tests para mantener la demo pequeña, pero estos serían los casos prioritarios:
 
 | Caso | Qué verificar |
 |---|---|
@@ -239,15 +240,6 @@ No se incluye proyecto de tests para mantener la demo pequeña, pero estos serí
 | Multa fuera del rango de fechas | Error de periodo del contrato |
 | Procesador Málaga | Referencia `MAL-{año}-{dni}` |
 | Procesador DGT | Referencia `DGT-{yyyyMMdd}-{dni}` |
-
-### Ejemplo de estructura de tests
-
-```
-FineAutomationInterviewDemo.Tests/
- ├── MalagaFineProcessorTests.cs
- ├── DgtFineProcessorTests.cs
- └── FineProcessingServiceTests.cs
-```
 
 ```bash
 dotnet new xunit -n FineAutomationInterviewDemo.Tests

@@ -5,11 +5,11 @@ namespace FineAutomationInterviewDemo.Infrastructure;
 /// </summary>
 public class FakeFileSystemSeeder
 {
-    private readonly string _basePath;
+    private readonly IAppPaths _paths;
 
-    public FakeFileSystemSeeder(string? basePath = null)
+    public FakeFileSystemSeeder(IAppPaths paths)
     {
-        _basePath = basePath ?? Directory.GetCurrentDirectory();
+        _paths = paths;
     }
 
     public void Seed()
@@ -17,13 +17,13 @@ public class FakeFileSystemSeeder
         SeedContracts();
         SeedHelpDocuments();
         SeedDownloadedFines();
-        EnsureOutputFolder();
+        Directory.CreateDirectory(_paths.OutputProcessedPath);
     }
 
     private void SeedContracts()
     {
         CreateFile(
-            Path.Combine("FakeServer", "Contracts", "1001", "contrato_1001.txt"),
+            Path.Combine("Contracts", "1001", "contrato_1001.txt"),
             """
             CONTRATO DE ALQUILER #1001
             Cliente: Juan Pérez García
@@ -35,7 +35,7 @@ public class FakeFileSystemSeeder
             """);
 
         CreateFile(
-            Path.Combine("FakeServer", "Contracts", "1002", "contrato_1002.txt"),
+            Path.Combine("Contracts", "1002", "contrato_1002.txt"),
             """
             RENTAL CONTRACT #1002
             Customer: John Smith
@@ -47,7 +47,7 @@ public class FakeFileSystemSeeder
             """);
 
         CreateFile(
-            Path.Combine("FakeServer", "Contracts", "1003", "contrato_1003.txt"),
+            Path.Combine("Contracts", "1003", "contrato_1003.txt"),
             """
             CONTRAT DE LOCATION #1003
             Client: Marie Dupont
@@ -62,22 +62,22 @@ public class FakeFileSystemSeeder
     private void SeedHelpDocuments()
     {
         CreateFile(
-            Path.Combine("FakeServer", "HelpDocuments", "ayuda_ES.txt"),
+            Path.Combine("HelpDocuments", "ayuda_ES.txt"),
             "Documento de ayuda en español para el cliente sobre cómo gestionar la multa.");
 
         CreateFile(
-            Path.Combine("FakeServer", "HelpDocuments", "ayuda_EN.txt"),
+            Path.Combine("HelpDocuments", "ayuda_EN.txt"),
             "Help document in English for the customer on how to handle the fine.");
 
         CreateFile(
-            Path.Combine("FakeServer", "HelpDocuments", "ayuda_FR.txt"),
+            Path.Combine("HelpDocuments", "ayuda_FR.txt"),
             "Document d'aide en français pour le client sur la gestion de l'amende.");
     }
 
     private void SeedDownloadedFines()
     {
         CreateFile(
-            Path.Combine("FakeServer", "DownloadedFines", "multa_malaga_juan.txt"),
+            Path.Combine("DownloadedFines", "multa_malaga_juan.txt"),
             """
             MULTA - ORIGEN: MÁLAGA
             Cliente: Juan Pérez García
@@ -88,7 +88,7 @@ public class FakeFileSystemSeeder
             """);
 
         CreateFile(
-            Path.Combine("FakeServer", "DownloadedFines", "multa_dgt_john.txt"),
+            Path.Combine("DownloadedFines", "multa_dgt_john.txt"),
             """
             FINE - ORIGIN: DGT
             Customer: John Smith
@@ -99,7 +99,7 @@ public class FakeFileSystemSeeder
             """);
 
         CreateFile(
-            Path.Combine("FakeServer", "DownloadedFines", "multa_sevilla_marie.txt"),
+            Path.Combine("DownloadedFines", "multa_sevilla_marie.txt"),
             """
             MULTA - ORIGEN: SEVILLA
             Cliente: Marie Dupont
@@ -110,7 +110,7 @@ public class FakeFileSystemSeeder
             """);
 
         CreateFile(
-            Path.Combine("FakeServer", "DownloadedFines", "multa_granada_error.txt"),
+            Path.Combine("DownloadedFines", "multa_granada_error.txt"),
             """
             MULTA - ORIGEN: GRANADA
             Cliente: Cliente Sin Contrato
@@ -121,15 +121,9 @@ public class FakeFileSystemSeeder
             """);
     }
 
-    private void EnsureOutputFolder()
-    {
-        var outputPath = Path.Combine(_basePath, "Output", "Processed");
-        Directory.CreateDirectory(outputPath);
-    }
-
     private void CreateFile(string relativePath, string content)
     {
-        var fullPath = Path.Combine(_basePath, relativePath);
+        var fullPath = Path.Combine(_paths.FakeServerPath, relativePath);
         var directory = Path.GetDirectoryName(fullPath);
 
         if (!string.IsNullOrEmpty(directory))

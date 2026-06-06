@@ -4,10 +4,12 @@ using FineAutomationInterviewDemo.Models;
 namespace FineAutomationInterviewDemo.Repositories;
 
 /// <summary>
-/// Simula una consulta a SQL Server usando datos en memoria.
+/// Simula el resultado de: SELECT * FROM Contracts WHERE Dni = @dni
+/// En producción se sustituiría por SqlContractRepository sin cambiar el orquestador.
 /// </summary>
 public class FakeContractRepository : IContractRepository
 {
+    // Equivalente a una tabla en memoria. En SQL Server sería una consulta parametrizada.
     private readonly List<Contract> _contracts =
     [
         new()
@@ -48,6 +50,11 @@ public class FakeContractRepository : IContractRepository
         }
     ];
 
-    public Contract? GetByDni(string dni) =>
-        _contracts.FirstOrDefault(c => c.Dni.Equals(dni, StringComparison.OrdinalIgnoreCase));
+    public Contract? GetByDni(string dni)
+    {
+        if (string.IsNullOrWhiteSpace(dni))
+            return null;
+
+        return _contracts.FirstOrDefault(c => c.Dni.Equals(dni, StringComparison.OrdinalIgnoreCase));
+    }
 }

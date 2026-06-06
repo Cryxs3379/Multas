@@ -4,139 +4,116 @@ using FineAutomationInterviewDemo.Strategies;
 
 namespace FineAutomationInterviewDemo.Services;
 
+/// <summary>
+/// Orquesta el flujo de procesamiento. No aplica reglas de origen ni accede al disco directamente.
+/// </summary>
 public class FineProcessingService : IFineProcessingService
 {
-    private readonly FineOriginProcessorFactory _processorFactory;
+    private readonly IFineOriginProcessorFactory _processorFactory;
     private readonly IContractRepository _contractRepository;
+    private readonly IContractValidator _contractValidator;
     private readonly IServerFileService _serverFileService;
     private readonly IOutputFolderService _outputFolderService;
+    private readonly IProcessingLogger _logger;
 
     public FineProcessingService(
-        FineOriginProcessorFactory processorFactory,
+        IFineOriginProcessorFactory processorFactory,
         IContractRepository contractRepository,
+        IContractValidator contractValidator,
         IServerFileService serverFileService,
-        IOutputFolderService outputFolderService)
+        IOutputFolderService outputFolderService,
+        IProcessingLogger logger)
     {
         _processorFactory = processorFactory;
         _contractRepository = contractRepository;
+        _contractValidator = contractValidator;
         _serverFileService = serverFileService;
         _outputFolderService = outputFolderService;
+        _logger = logger;
     }
 
     public ProcessingResult Process(Fine fine)
     {
-        LogSeparator();
-        Log($"Procesando multa de {fine.CustomerName}");
-        Log($"Origen seleccionado: {fine.Origin}");
+        _logger.LogSeparator();
+        _logger.LogInfo($"Procesando multa de {fine.CustomerName}");
+        _logger.LogInfo($"Origen seleccionado: {fine.Origin}");
 
-        var originResult = ProcessByOrigin(fine);
+        var originResult = ApplyOriginRules(fine);
         if (!originResult.Success)
-        {
-            Log($"ERROR: {originResult.Message}");
-            LogSeparator();
-            return ProcessingResult.Fail(fine, originResult.Message);
-        }
+            return FailAndClose(fine, originResult.Message);
 
-        Log(originResult.Message);
-        Log($"Referencia interna generada: {originResult.InternalReference}");
+        _logger.LogInfo(originResult.Message);
+        _logger.LogInfo($"Referencia interna generada: {originResult.InternalReference}");
 
-        var contract = FindContract(fine.Dni);
+        var contract = ResolveContract(fine.Dni);
         if (contract is null)
-        {
-            var message = $"No se encontró contrato para el DNI {fine.Dni}";
-            Log($"ERROR: {message}");
-            LogSeparator();
-            return ProcessingResult.Fail(fine, message);
-        }
+            return FailAndClose(fine, $"No se encontró contrato para el DNI {fine.Dni}");
 
-        Log($"Contrato encontrado: {contract.ContractNumber}");
+        _logger.LogInfo($"Contrato encontrado: {contract.ContractNumber}");
 
-        if (!IsFineDateWithinContract(fine, contract))
-        {
-            const string message = "La fecha de la multa no está dentro del periodo del contrato";
-            Log($"ERROR: {message}");
-            LogSeparator();
-            return ProcessingResult.Fail(fine, message);
-        }
+        var dateValidation = ValidateContractDates(fine, contract);
+        if (!dateValidation.IsValid)
+            return FailAndClose(fine, dateValidation.Message);
 
-        var fileError = ValidateServerFiles(fine, contract);
-        if (fileError is not null)
-        {
-            Log($"ERROR: {fileError}");
-            LogSeparator();
-            return ProcessingResult.Fail(fine, fileError);
-        }
+        var filesResult = ResolveServerFiles(fine, contract);
+        if (!filesResult.Success)
+            return FailAndClose(fine, filesResult.Message);
 
-        var outputPath = CreateFinalOutput(fine, contract, originResult.InternalReference!);
-        Log("Proceso completado correctamente.");
-        Log($"Carpeta creada: Output/Processed/{contract.CarPlate}_{contract.ContractNumber}");
-        LogSeparator();
-
-        return ProcessingResult.Ok(fine, contract, outputPath, originResult.InternalReference!);
+        var outputPath = BuildOutputPackage(fine, contract, originResult.InternalReference!, filesResult.Files!);
+        return CompleteAndClose(fine, contract, outputPath, originResult.InternalReference!);
     }
 
-    private OriginProcessingResult ProcessByOrigin(Fine fine)
+    private OriginProcessingResult ApplyOriginRules(Fine fine)
     {
-        try
-        {
-            var processor = _processorFactory.GetProcessor(fine.Origin);
-            return processor.Process(fine);
-        }
-        catch (ProcessorNotFoundException ex)
-        {
-            return OriginProcessingResult.Fail(ex.Message);
-        }
+        var processor = _processorFactory.TryGetProcessor(fine.Origin);
+        if (processor is null)
+            return OriginProcessingResult.Fail($"No se encontró procesador para el origen: {fine.Origin}");
+
+        return processor.Process(fine);
     }
 
-    private Contract? FindContract(string dni)
+    private Contract? ResolveContract(string dni)
     {
-        Log("Buscando contrato por DNI...");
+        _logger.LogInfo("Buscando contrato por DNI...");
         return _contractRepository.GetByDni(dni);
     }
 
-    private static bool IsFineDateWithinContract(Fine fine, Contract contract)
+    private ValidationResult ValidateContractDates(Fine fine, Contract contract)
     {
-        Console.WriteLine("Validando fechas del contrato...");
-        return fine.FineDate.Date >= contract.StartDate.Date
-            && fine.FineDate.Date <= contract.EndDate.Date;
+        _logger.LogInfo("Validando fechas del contrato...");
+        return _contractValidator.ValidateFineDateWithinContract(fine, contract);
     }
 
-    private string? ValidateServerFiles(Fine fine, Contract contract)
+    private FileResolutionResult ResolveServerFiles(Fine fine, Contract contract) =>
+        _serverFileService.TryResolveRequiredFiles(fine, contract);
+
+    private string BuildOutputPackage(
+        Fine fine,
+        Contract contract,
+        string internalReference,
+        ServerFilesBundle serverFiles)
     {
-        Log("Buscando multa simulada descargada...");
-        var finePath = _serverFileService.GetFineFilePath(fine.OriginalFileName);
-        if (!_serverFileService.FileExists(finePath))
-            return $"No se encontró la multa simulada: {fine.OriginalFileName}";
-
-        Log("Buscando contrato en servidor...");
-        var contractPath = _serverFileService.GetContractFilePath(contract.ContractNumber);
-        if (!_serverFileService.FileExists(contractPath))
-            return $"No se encontró el contrato en servidor: {contract.ContractNumber}";
-
-        Log("Buscando documento de ayuda...");
-        var helpPath = _serverFileService.GetHelpDocumentPath(contract.Language);
-        if (!_serverFileService.FileExists(helpPath))
-            return $"No se encontró el documento de ayuda para idioma: {contract.Language}";
-
-        return null;
+        _logger.LogInfo("Creando carpeta final...");
+        return _outputFolderService.CreateProcessedPackage(fine, contract, internalReference, serverFiles);
     }
 
-    private string CreateFinalOutput(Fine fine, Contract contract, string internalReference)
+    private ProcessingResult FailAndClose(Fine fine, string message)
     {
-        Log("Creando carpeta final...");
-
-        var finePath = _serverFileService.GetFineFilePath(fine.OriginalFileName);
-        var contractPath = _serverFileService.GetContractFilePath(contract.ContractNumber);
-        var helpPath = _serverFileService.GetHelpDocumentPath(contract.Language);
-
-        var outputPath = _outputFolderService.CreateOutputFolder(contract);
-        _outputFolderService.CopyFilesToOutput(outputPath, finePath, contractPath, helpPath);
-        _outputFolderService.CreateSummaryFile(outputPath, fine, contract, internalReference);
-
-        return outputPath;
+        _logger.LogError(message);
+        _logger.LogSeparator();
+        return ProcessingResult.Fail(fine, message);
     }
 
-    private static void Log(string message) => Console.WriteLine(message);
+    private ProcessingResult CompleteAndClose(
+        Fine fine,
+        Contract contract,
+        string outputPath,
+        string internalReference)
+    {
+        _logger.LogInfo("Proceso completado correctamente.");
+        _logger.LogInfo($"Carpeta creada: Output/Processed/{contract.CarPlate}_{contract.ContractNumber}");
+        _logger.LogSeparator();
 
-    private static void LogSeparator() => Console.WriteLine("========================================");
+        return ProcessingResult.Ok(fine, contract, outputPath, internalReference);
+    }
 }

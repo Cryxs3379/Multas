@@ -2,20 +2,15 @@ using FineAutomationInterviewDemo.Enums;
 
 namespace FineAutomationInterviewDemo.Strategies;
 
-public class FineOriginProcessorFactory
+public class FineOriginProcessorFactory : IFineOriginProcessorFactory
 {
-    private readonly Dictionary<FineOrigin, IFineOriginProcessor> _processors;
+    private readonly IReadOnlyDictionary<FineOrigin, IFineOriginProcessor> _processors;
 
     public FineOriginProcessorFactory(IEnumerable<IFineOriginProcessor> processors)
     {
         _processors = processors.ToDictionary(p => p.Origin);
     }
 
-    public IFineOriginProcessor GetProcessor(FineOrigin origin)
-    {
-        if (_processors.TryGetValue(origin, out var processor))
-            return processor;
-
-        throw new ProcessorNotFoundException(origin);
-    }
+    public IFineOriginProcessor? TryGetProcessor(FineOrigin origin) =>
+        _processors.TryGetValue(origin, out var processor) ? processor : null;
 }
