@@ -1,7 +1,0 @@
-CONTRATO DE ALQUILER #1001
-Cliente: Juan Pérez García
-DNI: 12345678A
-Matrícula: 1234ABC
-Nacionalidad: España
-Idioma: ES
-Periodo: 2026-05-25 al 2026-06-10

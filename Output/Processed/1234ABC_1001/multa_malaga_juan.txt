@@ -1,6 +1,0 @@
-MULTA - ORIGEN: MÁLAGA
-Cliente: Juan Pérez García
-DNI: 12345678A
-Fecha: 2026-06-01
-Matrícula: 1234ABC
-Importe: 90,00 EUR

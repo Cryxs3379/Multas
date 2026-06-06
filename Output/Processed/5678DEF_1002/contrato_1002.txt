@@ -1,7 +1,0 @@
-RENTAL CONTRACT #1002
-Customer: John Smith
-ID: X1234567B
-Plate: 5678DEF
-Nationality: United Kingdom
-Language: EN
-Period: 2026-06-01 to 2026-06-15

@@ -1,6 +1,0 @@
-MULTA - ORIGEN: GRANADA
-Cliente: Cliente Sin Contrato
-DNI: 00000000Z
-Fecha: 2026-06-04
-Matrícula: DESCONOCIDA
-Importe: 75,00 EUR

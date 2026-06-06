@@ -1,7 +1,0 @@
-CONTRAT DE LOCATION #1003
-Client: Marie Dupont
-ID: Y7654321C
-Immatriculation: 9012GHI
-Nationalité: France
-Langue: FR
-Période: 2026-05-28 au 2026-06-08
